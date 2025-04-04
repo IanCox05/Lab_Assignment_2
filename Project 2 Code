@@ -1,0 +1,122 @@
+section .data
+    filename db "fileSum.txt", 0
+    nl db 0xA, 0
+    output_label db "Sum: ", 0
+
+section .bss
+    input_buffer resb 1024
+    total resd 1
+    current_num resd 1
+    result_str resb 16
+
+section .text
+    global _start
+
+_start:
+    ; File open
+    mov eax, 5              ; sys_open
+    lea ebx, [filename]
+    xor ecx, ecx           ; O_RDONLY
+    int 0x80
+
+    ; Save file descriptor
+    push eax
+
+    ; Read file contents
+    mov eax, 3             ; sys_read
+    pop ebx                ; file descriptor
+    lea ecx, [input_buffer]
+    mov edx, 1024
+    int 0x80
+
+    ; Process the buffer
+    xor edx, edx           ; total = 0
+    mov [total], edx
+    mov [current_num], edx ; current_num = 0
+    lea esi, [input_buffer]
+    mov ecx, eax           ; bytes read
+
+process_buffer:
+    jecxz complete         ; if no more bytes, finish
+    dec ecx
+    lodsb                  ; load next byte into al
+
+    ; Check if digit
+    cmp al, '0'
+    jb not_digit
+    cmp al, '9'
+    ja not_digit
+
+    ; Process digit
+    sub al, '0'
+    mov ebx, [current_num]
+    lea ebx, [ebx*4 + ebx] ; multiply by 5
+    add ebx, ebx           ; multiply by 2 (total *10)
+    movzx eax, al
+    add ebx, eax
+    mov [current_num], ebx
+    jmp process_buffer
+
+not_digit:
+    ; Add accumulated number to total
+    mov eax, [current_num]
+    add [total], eax
+    mov dword [current_num], 0
+    jmp process_buffer
+
+complete:
+    ; Add final number
+    mov eax, [current_num]
+    add [total], eax
+
+    ; Convert to string
+    push result_str
+    push dword [total]
+    call num_to_string
+
+    ; Display "Sum: "
+    mov eax, 4
+    mov ebx, 1
+    lea ecx, [output_label]
+    mov edx, 5
+    int 0x80
+
+    ; Display result
+    mov eax, 4
+    mov ebx, 1
+    lea ecx, [result_str]
+    mov edx, 16
+    int 0x80
+
+    ; Display newline
+    mov eax, 4
+    mov ebx, 1
+    lea ecx, [nl]
+    mov edx, 1
+    int 0x80
+
+    ; Exit program
+    mov eax, 1
+    xor ebx, ebx
+    int 0x80
+
+num_to_string:
+    push ebp
+    mov ebp, esp
+    mov eax, [ebp + 8]     ; number
+    mov edi, [ebp + 12]    ; string buffer
+    add edi, 15
+    mov byte [edi], 0
+    mov ecx, 10
+
+convert:
+    xor edx, edx
+    div ecx
+    add dl, '0'
+    dec edi
+    mov [edi], dl
+    test eax, eax
+    jnz convert
+
+    leave
+    ret 8
